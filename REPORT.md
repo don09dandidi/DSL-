@@ -17,6 +17,8 @@ The distinction between lexeme and token is important:
 
 A lexer (also called a scanner or tokenizer) is typically implemented either with regular expressions or as a hand-written finite automaton. In both cases the underlying mechanism is equivalent to a Deterministic Finite Automaton (DFA): the lexer transitions between states based on incoming characters and emits a token when it reaches an accepting state.
 
+After tokenization, a **parser** takes the token stream and applies grammar rules to build an **Abstract Syntax Tree (AST)** — a hierarchical representation of the program's structure that can be further analysed or evaluated.
+
 ---
 
 ## Objectives
@@ -53,6 +55,16 @@ entity Player {
     if health <= 0 {
         return nil
     }
+}
+
+-- Enemy with patrol behavior
+entity Enemy {
+    health = 50
+    damage = 10
+    patrol_radius = 30.0
+
+    on tick -> patrol()
+    on player_nearby -> attack()
 }
 ```
 
@@ -145,7 +157,7 @@ Source string
 
 ---
 
-### Results
+### Lexer Results
 
 Running the lexer on the sample RoboScript source above produces 88 tokens (61 meaningful, excluding newlines and EOF). A formatted excerpt:
 
@@ -182,17 +194,81 @@ Every token carries the correct line and column, enabling meaningful error messa
 
 ---
 
+### Parser Architecture
+
+The `Parser` implements a **recursive-descent** strategy, consuming the token stream produced by the lexer and building AST nodes according to the following grammar:
+
+```
+program     → entity*
+entity      → 'entity' IDENTIFIER '{' statement* '}'
+statement   → assignment | event_bind | if_stmt
+assignment  → IDENTIFIER '=' expr
+event_bind  → 'on' IDENTIFIER '->' IDENTIFIER '(' ')'
+if_stmt     → 'if' expr '{' statement* '}'
+expr        → primary (BINOP primary)?
+primary     → INTEGER | FLOAT | STRING | BOOLEAN | 'nil' | IDENTIFIER
+```
+
+AST node types:
+
+| Node | Fields |
+|---|---|
+| `ProgramNode` | `entities: List[EntityNode]` |
+| `EntityNode` | `name, body: List[ASTNode]` |
+| `AssignmentNode` | `name, value: ASTNode` |
+| `EventBindNode` | `event, handler` |
+| `IfNode` | `condition: ASTNode, body: List[ASTNode]` |
+| `BinOpNode` | `left, op, right` |
+| `LiteralNode` | `value, kind` |
+| `IdentifierNode` | `name` |
+
+### Parser Results
+
+Running the parser on the same sample source produces:
+
+```
+Program
+  Entity: Player
+    Assign: health =
+      Literal(int): 100
+    Assign: speed =
+      Literal(float): 15.5
+    Assign: name =
+      Literal(string): 'Hero'
+    Assign: invincible =
+      Literal(bool): False
+    EventBind: on spawn -> respawn()
+    EventBind: on death -> gameOver()
+    If:
+      condition:
+        BinOp: <=
+          Identifier: health
+          Literal(int): 0
+  Entity: Enemy
+    Assign: health =
+      Literal(int): 50
+    Assign: damage =
+      Literal(int): 10
+    Assign: patrol_radius =
+      Literal(float): 30.0
+    EventBind: on tick -> patrol()
+    EventBind: on player_nearby -> attack()
+```
+
+---
+
 ## Conclusions
 
-The implemented lexer demonstrates the core mechanics of lexical analysis:
+The implemented lexer and parser demonstrate the core mechanics of lexical analysis and parsing:
 
 1. **Character-by-character scanning** with a single-pass, O(n) algorithm — no backtracking.
 2. **Source location tracking** (line + column) attached to every token, essential for error reporting.
 3. **Keyword vs. identifier disambiguation** done at classification time rather than requiring separate DFA states.
 4. **Multi-character operator assembly** handled by a single-lookahead peek, keeping the scanner simple.
 5. **Robust string scanning** with escape sequence support and graceful handling of unterminated strings.
+6. **Recursive-descent parser** that directly mirrors the grammar rules as functions, producing a clean AST ready for evaluation or code generation.
 
-The RoboScript domain provided a rich-enough token set to exercise all major lexer concerns without the overhead of a full production language, while remaining directly relevant to practical game scripting use cases.
+The RoboScript domain provided a rich-enough token set to exercise all major lexer and parser concerns without the overhead of a full production language, while remaining directly relevant to practical game scripting use cases.
 
 ---
 
